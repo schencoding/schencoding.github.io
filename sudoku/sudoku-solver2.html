@@ -1,0 +1,1151 @@
+<html>
+<head>
+
+<title>Sudoku Solver in Javascript</title>
+
+</head>
+<body bgcolor="#d2e8d7">
+
+<script language=javascript>
+
+  // the 9x9 grid
+  var count = [ 
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9]
+         ];
+
+  var cand = [ 
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe]
+         ];
+
+  // queue for the solution steps
+  var queue= [ ];
+  var num_preset_digits= 0;
+
+  var grid_init_ok= 0;
+  var total_num_solutions= 0;  // printing purpose
+
+  var g_threshold= 100; // stop searching after trying this many times
+  var g_num_failed_solutions= 0;
+  var g_num_tried_solutions= 0;
+
+  var g_focused_name= '';  // click input
+
+  // --------------------------------------------------
+  // cell related methods
+  // --------------------------------------------------
+  function initState() {
+          for (var i= 0; i<9; i++) {
+                  for (var j= 0; j<9; j++) {
+                          count[i][j]= 9;
+                          cand[i][j]=  0x3fe;
+                  }
+          }
+          queue= [];
+          num_preset_digits= 0;
+
+          grid_init_ok= 0;
+          total_num_solutions= 0;
+
+          g_threshold= 100;
+          g_num_failed_solutions= 0;
+          g_num_tried_solutions= 0;
+
+          g_focused_name= ''; 
+  }
+
+  function setDigit(r, c, d) {
+      count[r][c]= 1;
+      cand[r][c]= (1<<d);
+  }
+
+  function clearDigit(r, c, d) {
+      var my_cand= cand[r][c];
+      if (my_cand & (1<<d)) {
+          count[r][c] --;
+          cand[r][c] = my_cand - (1<<d);
+      }
+  }
+
+  function getFirst(r, c) {
+      for (var d=1; d<=9; d++)
+         if (cand[r][c] & (1<<d)) return d;
+  }
+
+  function saveState(save_count, save_cand, save_queue) {
+          for (var i= 0; i<9; i++) {
+                  for (var j= 0; j<9; j++) {
+                          save_count[i][j]= count[i][j];
+                          save_cand[i][j]=  cand[i][j];
+                  }
+          }
+          for (var i=0; i<queue.length; i++) {
+                  save_queue[i]= queue[i];
+          }
+          save_queue.length= queue.length;
+  }
+
+  function loadState(save_count, save_cand, save_queue) {
+          for (var i= 0; i<9; i++) {
+                  for (var j= 0; j<9; j++) {
+                          count[i][j]= save_count[i][j];
+                          cand[i][j]=  save_cand[i][j];
+                  }
+          }
+          for (var i=0; i<save_queue.length; i++) {
+                  queue[i]= save_queue[i];
+          }
+          queue.length= save_queue.length;
+  }
+
+  // --------------------------------------------------
+  // queue related methods
+  // --------------------------------------------------
+  // animate step ss from queue[]
+  function printQueue(ss) {
+    var queue_div = document.getElementById('queue');
+    var out= '';
+    //alert("print queue length: " + queue.length + " preset:" + num_preset_digits);
+    out= out + '<table style="border: 1px solid #151515;" width="850" cellpadding="2">';
+    for (var i=num_preset_digits; i<queue.length; i+=9) {
+       var k_end= i+9;
+       if (k_end > queue.length) k_end= queue.length;
+       out= out + '<tr>';
+       for (var k=i; k<k_end; k++) {
+          var q= queue[k];
+          if (k != ss) {
+              out= out + '<td> [';
+          }
+          else {
+              out= out + '<td bgcolor="#fff0a0"> [';
+          }
+          out= out + (q.row+1) + ',' + (q.col+1) + ']=' + q.val + '(' + q.act + ')</td>';
+       }
+       out= out + '</tr>';
+    }
+    out= out + "</table><br>";
+    out= out + 'd: given a digit, delete candidate in the same row, column, 3x3 grid<br> x: check if only one cell remains for a digit in a row, a column, or a 3x3 grid<br> tr: try in search <br> r: row, c: column, g: 3x3 grid<br>';
+    queue_div.innerHTML = out;
+  }
+
+  function queueToString() {
+    var out= "Queue(" + (queue.length-num_preset_digits) + ") ";
+    for (var i=num_preset_digits; i<queue.length; i++) {
+       var q= queue[i];
+       out= out + '[' + (q.row+1) + ',' + (q.col+1) + ']=' + q.val + '(' + q.act + ') ';
+    }
+    return out;
+  }
+
+  function queueAllToString() {
+    var out= "Queue(" + (queue.length) + ") ";
+    for (var i=0; i<queue.length; i++) {
+       var q= queue[i];
+       out= out + '[' + (q.row+1) + ',' + (q.col+1) + ']=' + q.val + '(' + q.act + ') ';
+    }
+    return out;
+  }
+
+  // --------------------------------------------------
+  // load the input grid
+  // --------------------------------------------------
+  function gridToString() {
+         txt= '';
+         for (var i=0; i<9; i++) {
+            for (var j=0; j<9; j++) {
+               if (count[i][j]==1) {
+                   txt= txt + getFirst(i,j) + ' ';
+               }
+               else {
+                   txt= txt + '0 ';
+               }
+               if ((j==2) || (j==5)) {
+                   txt= txt + ' ';
+               }
+            }
+            if ((i==2) || (i==5)) {
+               txt= txt + "\n\n";
+            }
+            else {
+               txt= txt + "\n";
+            }
+         }
+         return txt;
+  }
+
+  function load () {
+      var fm= document.getElementById("grid");
+      var err= "";
+
+      initState();
+
+      num_preset_digits= 0;
+      for (var i=0; i<9; i++) {
+         for (var j=0; j<9; j++) {
+            var input_value = fm.elements[i*9+j].value;
+            if (input_value.length > 0) {
+
+               var v= parseInt(input_value);
+               if (v>=1 && v<=9) {
+                  setDigit(i, j, v);
+                  num_preset_digits = num_preset_digits+1;
+                  queue.push({row:i, col:j, val:v, act:'ps'});
+               }
+               else {
+                  err= err + '[' + (i+1) + ',' + (j+1) + ']=' + input_value + "\n";
+               }
+
+            } // done if length>0
+         } // end for j
+      } // end for i
+
+      if (err.length > 0) {
+         alert ('Invalid grid input: ' + err);
+      }
+      else if (queue.length < 9) {
+         alert ('Grid contains only ' + queue.length + ' preset digits!');
+      }
+      else {
+         grid_init_ok= 1;
+         document.getElementById("txt2grid").value= gridToString();
+      }
+
+   }
+
+  function convert() {
+      var input_txt= document.getElementById("txt2grid").value;
+      var input_list= input_txt.match(/\d+/g);
+      var err= '';
+
+      if (input_list == null) input_list= [];
+
+      if (input_list.length == 81) {
+        
+         for (var i=0; i<9; i++)
+            for (var j=0; j<9; j++) {
+               var d = parseInt(input_list[i*9+j]);
+               var x = document.getElementsByName('c'+(i+1)+(j+1));
+               if (d>=1 && d<=9) {
+                  x[0].value= d;
+               }
+               else {
+                  x[0].value= '';
+               }
+          }
+      }
+      else {
+        err= 'Text contains ' + input_list.length + ' (!=81) digits!';
+      }
+
+      if (err.length > 0) {
+         alert ('Error: ' + err);
+      }
+  }
+
+  function setInputFocus(ele_name) {
+      g_focused_name= ele_name; 
+      document.getElementById("rm").focus();
+  }
+
+  function setFocus2Digit(val) {
+      var x = document.getElementsByName(g_focused_name);
+      if (x.length == 1) {
+          x[0].value= val;
+      }
+  }
+
+  // --------------------------------------------------
+  // Analysis Routines 
+  // --------------------------------------------------
+
+  // q_idx: index in the queue[]
+  // the digit of the specified cell is already set
+  // we remove the candidate from the row, the column, and the sub-grid.
+  function deleteCandidates(q_idx) {
+       var d= queue[q_idx].val;
+
+       // 1. same row
+       var rr= queue[q_idx].row;
+       var cc= queue[q_idx].col;
+
+       for (var j=0; j<9; j++) {
+          if (count[rr][j] > 1) {
+            clearDigit(rr, j, d);
+            if (count[rr][j] == 1) {
+               var vv= getFirst(rr, j);
+               queue.push({row:rr, col:j, val:vv, act:'dr'});
+            }
+          }
+          else if (cand[rr][j] & (1<<d)) {
+             if (j!=cc) {
+                console.log("deleteCandidates row error [" + (rr+1) + "," + (j+1) + '&' + (cc+1) + "]=" + d + "\n");
+                return -1;  // conflict
+             }
+          }
+       }
+
+       // 2. same col
+       for (var i=0; i<9; i++) {
+          if (count[i][cc] > 1) {
+            clearDigit(i, cc, d);
+            if (count[i][cc] == 1) {
+               var vv= getFirst(i, cc);
+               queue.push({row:i, col:cc, val:vv, act:'dc'});
+            }
+          }
+          else if (cand[i][cc] & (1<<d)) {
+             if (i!=rr) {
+                console.log("deleteCandidates col error [" + (i+1)+ '&' + (rr+1)  + "," + (cc+1) + "]=" + d + "\n");
+                return -1;  // conflict
+             }
+          }
+       }
+
+       // 3. same sub-grid
+       rr= Math.floor(rr/3)*3;
+       cc= Math.floor(cc/3)*3;
+
+       for (var i=rr; i<rr+3; i++) {
+          for (var j=cc; j<cc+3; j++) {
+             if (count[i][j] > 1) {
+               clearDigit(i, j, d);
+               if (count[i][j] == 1) {
+                  var vv= getFirst(i, j);
+                  queue.push({row:i, col:j, val:vv, act:'dg'});
+               }
+             }
+             else if (cand[i][j] & (1<<d)) {
+                  if (!((i==queue[q_idx].row) && (j==queue[q_idx].col))) {
+                     console.log("deleteCandidates grid error [" + (i+1) + "," + (j+1) + "]=" + d + "\n");
+                     return -1;  // conflict
+                  }
+             }
+          }
+       }
+
+       return 0;
+  }
+
+
+  // check if a cell has to be set to a digit because the row / column/
+  // sub-grid's other cells cannot contain the digit.
+  function look4Exclusive() {
+       for (var d=1; d<=9; d++) {
+
+          // 1. check each row
+          for (var i=0; i<9; i++) {
+             var which= -1;
+             var cc= 0;
+             for (var j=0; j<9; j++) {
+                if (cand[i][j] & (1<<d)) {
+                  cc++; which=j;
+                }
+             }
+             if ((cc==1) && (count[i][which]>1)) {
+                setDigit(i, which, d);
+                queue.push({row:i, col:which, val:d, act:'xr'});
+                // console.log("look4Exclusive row [" + (i+1) + "," + (which+1) + "]=" + d + "\n");
+             }
+             else if (cc == 0) { return -1; }
+          }
+
+          // 2. check each column
+          for (var j=0; j<9; j++) {
+             var which= -1;
+             var cc= 0;
+             for (var i=0; i<9; i++) {
+                if (cand[i][j] & (1<<d)) {
+                  cc++; which=i;
+                }
+             }
+             if ((cc==1) && (count[which][j]>1)) {
+                setDigit(which, j, d);
+                queue.push({row:which, col:j, val:d, act:'xc'});
+                // console.log("look4Exclusive col [" + (which+1) + "," + (j+1) + "]=" + d + "\n");
+             }
+             else if (cc == 0) { return -1; }
+          }
+
+          // 3. check each sub-grid
+          for (var rr=0; rr<9; rr+=3) {
+             for (var cl=0; cl<9; cl+=3) {
+                var cc=0;
+                var r=-1, w=-1;
+                for (var i=rr; i<rr+3; i++) {
+                   for (var j=cl; j<cl+3; j++) {
+                      if (cand[i][j] & (1<<d)) {
+                        cc++; 
+                        r=i; w=j;
+                      }
+                   }
+                }
+                if ((cc==1) && (count[r][w]>1)) {
+                   setDigit(r, w, d);
+                   queue.push({row:r, col:w, val:d, act:'xg'});
+                   // console.log("look4Exclusive grid [" + (r+1) + "," + (w+1) + "]=" + d + "\n");
+                }
+                else if (cc == 0) { return -1; }
+             }
+          }
+
+       } // end for d
+
+       return 0;
+   }
+
+  // --------------------------------------------------
+  // Display result
+  // --------------------------------------------------
+
+   function printFinal () {
+      var output_div = document.getElementById('output');
+      var out='Solution (total ' + total_num_solutions + ' solutions)<p><br>';
+
+      out= out + '<table border="1" align="center" cellspacing="0" cellpadding="2" width="245">'
+      for (var i=0; i<9; i++) {
+          out= out + '<tr>';
+          for (var j=0; j<9; j++) {
+             var set_bg=1;
+             if ((i<3) || (i>=6)) {
+               if (j>=3 && j<6) {
+                 set_bg= 0;
+               }
+             }
+             else {
+               if (j<3 || j>=6) {
+                 set_bg= 0;
+               }
+             }
+             if (count[i][j]==1) {
+               if (set_bg == 1) {
+                 out= out + '<td align="center" bgcolor="#ffffff" height="25">' + getFirst(i, j) + '</td>';
+               }
+               else {
+                 out= out + '<td align="center" bgcolor="#b0e0ff" height="25">' + getFirst(i, j) + '</td>';
+               }
+             }
+             else {
+               if (set_bg == 1) {
+                 out= out + '<td bgcolor="#ffffff"></td>';
+               }
+               else {
+                 out= out + '<td bgcolor="#b0e0ff"></td>';
+               }
+             }
+          }
+          out= out + '</tr>';
+      }
+      out= out + '</table>';
+      out= out + '<br><button onclick="animRewind()" id="rewind" style="width:40px; height:23px;">|&lt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animPause()" id="pause" style="width:40px; height:23px;">||</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animBack()" id="back" style="width:40px; height:23px;">&lt;&lt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animForw()" id="forw" style="width:40px; height:23px;">&gt;&gt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animRun()" id="run" style="width:40px; height:23px;">&gt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animAll()" id="all" style="width:40px; height:23px;">&gt;|</button>';
+      output_div.innerHTML = out;
+   }
+
+   
+  var anim = [ 
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+           [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ']
+         ];
+  var anim_int= 0;
+  var anim_step= -1;
+  var anim_running= 0;
+
+   // initialize anim[][] with the preset digits
+   function animInit() {
+      for (var i=0; i<9; i++) {
+         for (var j=0; j<9; j++) {
+            anim[i][j]= ' ';
+         }
+      }
+      for (var i=0; i<num_preset_digits; i++) {
+         var q= queue[i];
+         anim[q.row][q.col]= q.val.toString();
+      }
+      anim_step= num_preset_digits;
+   }
+
+   // animate step ss from queue[]
+   function animStep(ss) {
+      var q= queue[ss];
+
+      var rr= q.row;
+      var cl= q.col;
+      anim[rr][cl]= q.val.toString();
+
+      var output_div = document.getElementById('output');
+      var out='Solution (total ' + total_num_solutions + ' solutions)<p><br>';
+
+      out= out + '<table border="1" align="center" cellspacing="0" cellpadding="2" width="245">'
+      for (var i=0; i<9; i++) {
+          out= out + '<tr>';
+          for (var j=0; j<9; j++) {
+             var set_bg=1;
+             if ((i<3) || (i>=6)) {
+               if (j>=3 && j<6) {
+                 set_bg= 0;
+               }
+             }
+             else {
+               if (j<3 || j>=6) {
+                 set_bg= 0;
+               }
+             }
+
+             value= anim[i][j];
+
+             if ((i==rr) && (j==cl)) {
+                out= out + '<td align="center" bgcolor="#fff0a0" height="25">' + value + '</td>';
+             }
+             else if (set_bg == 1) {
+                out= out + '<td align="center" bgcolor="#ffffff" height="25">' + value + '</td>';
+             }
+             else {
+                out= out + '<td align="center" bgcolor="#b0e0ff">' + value + '</td>';
+             }
+          }
+          out= out + '</tr>';
+      }
+      out= out + '</table>';
+      out= out + '<br><button onclick="animRewind()" id="rewind" style="width:40px; height:23px;">|&lt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animPause()" id="pause" style="width:40px; height:23px;">||</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animBack()" id="back" style="width:40px; height:23px;">&lt;&lt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animForw()" id="forw" style="width:40px; height:23px;">&gt;&gt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animRun()" id="run" style="width:40px; height:23px;">&gt;</button>'
+               + '<!--' + "\n" + '-->'
+               + '<button onclick="animAll()" id="all" style="width:40px; height:23px;">&gt;|</button>';
+
+      //out= out + '<br><button onclick="animRewind()" id="rewind" style="width:30px; height:23px;">&#10073;&#9668;</button>&nbsp;'
+      //         + '<button onclick="animPause()" id="pause" style="width:30px; height:23px;">&#10074;&#10074;</button>&nbsp;'
+      //         + '<button onclick="animBack()" id="back" style="width:30px; height:23px;">&#9194;</button>&nbsp;'
+      //         + '<button onclick="animForw()" id="forw" style="width:30px; height:23px;">&#9193;</button>&nbsp;'
+      //         + '<button onclick="animRun()" id="run" style="width:30px; height:23px;">&#9658;</button>&nbsp;'
+      //         + '<button onclick="animAll()" id="all" style="width:30px; height:23px;">&#9658;&#10073;</button>';
+
+      output_div.innerHTML = out;
+   }
+
+   function printAnim () {
+      anim_int= setInterval(function(){
+                      if (anim_step < queue.length) {
+                        animStep(anim_step);
+                        printQueue(anim_step);
+                        anim_step ++;
+                      }
+                      else {
+                        printFinal();
+                        printQueue(0);
+                        clearInterval(anim_int);
+                        anim_int= 0;
+                      }
+                   }, 400);
+   }
+
+   function animRewind () {
+              if (anim_int != 0) {
+                  clearInterval(anim_int);
+                  anim_int= 0;
+              }
+              animInit();
+              animForw();
+   }
+
+   function animPause () {
+              if (anim_int != 0) {
+                  clearInterval(anim_int);
+                  anim_int= 0;
+              }
+   }
+
+   function animBack () {
+              animPause();
+              if (anim_step > num_preset_digits+1) {
+                      anim_step --;
+                      var q= queue[anim_step];
+                      var rr= q.row;
+                      var cl= q.col;
+                      anim[rr][cl]= ' ';
+                      animStep(anim_step-1);
+                      printQueue(anim_step-1);
+              }
+   }
+
+   function animForw () {
+              animPause();
+              if (anim_step < queue.length) {
+                      animStep(anim_step);
+                      printQueue(anim_step);
+                      anim_step ++;
+              }
+   }
+
+   function animRun () {
+              if (anim_int == 0) {
+                  printAnim ();
+              }
+   }
+
+   function animAll () {
+              animPause();
+              printFinal();
+   }
+
+  function outputFinal() {
+      printQueue(0);
+      animInit();
+      printAnim();
+  }
+
+  // --------------------------------------------------
+  // Solve puzzle
+  // --------------------------------------------------
+
+  function searchWBackTrace(one_count, one_cand, one_queue) {
+
+      // console.log("SearchWBackTrace\n" + queueToString() + "\n" + gridToString());
+
+      // 1. look for a candidate
+      var min_count=10;
+      var rr=-1;
+      var cl=-1;
+      for (var i= 0; i<9; i++) {
+         for (var j= 0; j<9; j++) {
+              if (count[i][j]>1 && min_count>count[i][j]) {
+                 min_count= count[i][j];
+                 rr=i; cl=j;
+             }
+         }
+      }
+
+      // 2. these variables are used to save global states
+      var save_count = [ 
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9]
+         ];
+     var save_cand = [ 
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe]
+         ];
+     var save_queue= [ ];
+
+     // 3. iterates through every possible digit for [rr, cl]
+     var val= cand[rr][cl];
+     var num_solutions= 0;
+     for (var d=1; d<=9; d++) {
+        if (val & (1<<d)) {
+                // save states
+                saveState(save_count, save_cand, save_queue);
+
+                // set digit
+                var nn= queue.length;
+                setDigit(rr, cl, d);
+                queue.push({row:rr, col:cl, val:d, act:'tr'});
+                // console.log("try [" + (rr+1) + "," + (cl+1) + "]=" + d + "\n" +queueToString() + "\n" + gridToString());
+                console.log("SearchWBackTrace try [" + (rr+1) + "," + (cl+1) + "]=" + d + " step (" + (queue.length-num_preset_digits) + ")\n");
+
+                // solve using delete and exclusives
+                var ok=true;
+                while (ok) {
+                   if (nn < queue.length) {
+                      if (deleteCandidates(nn) < 0) {ok=false; break;}
+                      // console.log("deleteCandidates [" + (queue[nn].row+1) + "," + (queue[nn].col+1) + "]=" + queue[nn].val +", queue len=>" + (queue.length-num_preset_digits) + "\n");
+                      nn ++;
+                   }
+                   else {
+                      if (look4Exclusive() < 0) {ok=false; break;}
+                      // console.log("look4Exclusive, queue len=>" + (queue.length-num_preset_digits) + "\n");
+                      if (nn >= queue.length) break;
+                   }
+                }
+
+                if (ok) {
+                    // are we done?
+                    if (queue.length == 81) {
+                          saveState(one_count, one_cand, one_queue);
+                          num_solutions = num_solutions + 1;
+                          console.log("-------- Found solution --------\n" +queueToString() + "\n\n" + gridToString() + "\n");
+                          g_num_tried_solutions ++;
+                    }
+
+                    // recursive call: find the next min count cell, and try again
+                    else {
+                          num_solutions = num_solutions + searchWBackTrace(one_count, one_cand, one_queue);
+                    }
+                }
+                else {
+                    console.log("tried [" + (rr+1) + "," + (cl+1) + "]=" + d+ ", but invalid\n" + queueToString() + "\n" + gridToString());
+                    g_num_tried_solutions ++;
+                    g_num_failed_solutions ++;
+                }
+
+                // load states
+                loadState(save_count, save_cand, save_queue);
+
+                // we will stop at g_threshold solutions, otherwise there could be combinatorial explotion
+                if ((g_num_tried_solutions >= g_threshold) && (g_num_failed_solutions<g_num_tried_solutions)) {
+                     break;
+                }
+        }
+     }
+
+     return num_solutions;
+  }
+
+  function solvePuzzle1() {
+
+      // 2. delete candidates for preset cells
+      var nn=0;
+      for (nn=0; nn<num_preset_digits; nn++) {
+         deleteCandidates(nn);
+      }
+  }
+
+  function solvePuzzle2(allow_alert) {
+      var nn= num_preset_digits;
+
+      // 3. solve
+      while (true) {
+         if (nn < queue.length) {
+            if (deleteCandidates(nn)<0) {
+               if (allow_alert) alert("Conflicts in preset digits!\n");
+               return;
+            }
+            nn ++;
+         }
+         else {
+            if (look4Exclusive() < 0) {
+               if (allow_alert) alert("Conflicts in preset digits!\n");
+               return;
+            }
+            if (nn >= queue.length) break;
+         }
+      }
+
+      // 4. have to search?
+      if (queue.length < 81) {
+         var one_count = [ 
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9],
+           [9, 9, 9, 9, 9, 9, 9, 9, 9]
+         ];
+        var one_cand = [ 
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe],
+           [0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe, 0x3fe]
+         ];
+        var one_queue= [ ];
+
+          var num_solutions= searchWBackTrace(one_count, one_cand, one_queue);
+
+          if (num_solutions <= 0) {
+              if (allow_alert) alert("No valid solution!");
+          }
+          else {
+              var out= "******** Found " + num_solutions + " solutions ********\n";
+              if (g_num_tried_solutions < g_threshold) {
+                out= out +"Tried " + g_num_tried_solutions + " solutions.  Failed " + g_num_failed_solutions + " times\n";
+              }
+              else {
+                out= out +"Stopped after trying " + g_num_tried_solutions + " solutions.  Failed " + g_num_failed_solutions + " times\n";
+                if (g_threshold > 1 && allow_alert) alert(out);
+              }
+              console.log(out);
+              loadState(one_count, one_cand, one_queue);
+          }
+          total_num_solutions= num_solutions;
+      }
+      else {
+          total_num_solutions= 1;
+      }
+  }
+
+  function solve() {
+
+      // 1. get input
+      load();
+
+      if (grid_init_ok == 0) {
+          return;
+      }
+
+      // 2. solve puzzle
+      solvePuzzle1();
+      solvePuzzle2(true);
+
+      // n. output
+      outputFinal();
+  }
+
+  // --------------------------------------------------
+  // Generate puzzle
+  // --------------------------------------------------
+  function getUniform(min, max) {
+      return min + Math.floor(Math.random() * (max - min + 1));
+  }
+
+  function getUniformDigit(bitmap) {
+      var d_list= [];
+      for (var d=1; d<=9; d++) {
+         if (bitmap & (1<<d)) d_list.push(d);
+      }
+      return d_list[ getUniform(0, d_list.length-1) ];
+  }
+
+  function setStateFromQueue() {
+      // 1. get all preset and tried steps
+      var g_queue= [];
+      for (var i=0; i<num_preset_digits; i++) {
+         g_queue.push(queue[i]);
+      }
+      for (var i=num_preset_digits; i<queue.length; i++) {
+          if ("tr".localeCompare(queue[i].act) == 0) {
+              g_queue.push(queue[i]);
+          }
+      }
+
+      // 2. initialize
+      initState();
+
+      // 3. set state
+      for (var k=0; k<g_queue.length; k++) {
+          var q= g_queue[k];
+          setDigit(q.row, q.col, q.val);
+          queue.push({row:q.row, col:q.col, val:q.val, act:'ps'});
+          num_preset_digits = num_preset_digits+1;
+      }
+  }
+
+  function genPuzzle(initial_num) {
+
+      // 1. clear state
+      initState();
+
+      // 2. randomly set initial_num cells
+      var num_tries= 0;
+      num_preset_digits= 0;
+      while (num_preset_digits < initial_num) {
+          var i= getUniform(0, 8);
+          var j= getUniform(0, 8);
+
+          if (count[i][j] > 1) {
+             var v= getUniformDigit(cand[i][j]);
+
+             var l_cand= cand[i][j];
+             var l_count= count[i][j];
+
+             setDigit(i, j, v);
+             queue[num_preset_digits]= {row:i, col:j, val:v, act:'ps'};
+
+             if (deleteCandidates(num_preset_digits) < 0) {
+                    // conflicts
+                    cand[i][j]= l_cand;
+                    count[i][j]= l_count;
+             }
+             else { // good
+                    num_preset_digits ++;
+             }
+          }
+
+          num_tries ++;
+          if (num_tries >= 10000) {
+              alert("Error generating intial grid with " + initial_num + " preset digits: Too many tries!");
+              initState();
+              return;
+          }
+      }
+      grid_init_ok= 1;
+
+      console.log ("Finish generating initial puzzle\n" + gridToString());
+
+      // 3. try solving the puzzle
+      setStateFromQueue();
+
+      g_threshold= 1;
+      solvePuzzle1();
+      solvePuzzle2(false);
+
+      // 4. from the final solution, find and set all the tr cases
+      var n_sols= total_num_solutions;
+      setStateFromQueue();
+      if (n_sols > 0) {
+          console.log("GenPuzzle Success: " + num_preset_digits + " preset digits\n");
+
+            // write to txt2grid area
+          document.getElementById("txt2grid").value= gridToString();
+            // update the grid
+          convert();
+      }
+      else {
+          console.log("GenPuzzle Conflicts\n" + queueAllToString() + "\n");
+      }
+      return n_sols;
+  }
+
+  function generate() {
+      var x= document.getElementById("gnum");
+      var initial_num= parseInt(x.value);
+      if (initial_num>=1 && initial_num<=81) {
+
+          var k= 0;
+          for (; k<100; k++) {
+              if (genPuzzle(initial_num) > 0) break;
+          }
+
+          if (k >= 100) {
+              alert("Failed generating puzzle for 100 tries!\n");
+          }
+          else {
+              alert("Successfully generating puzzle with " + num_preset_digits + " digits in " + (k+1) + " tries!\n");
+          }
+      }
+  }
+
+</script>
+
+<div id="main" style="width: 900px; float: none;">
+
+<div id="mytxt2grid" style="width: 250px; float: left; text-align: center;">
+
+  Input Grid from Text <p>
+  <br>
+
+  <textarea id="txt2grid" rows="14" cols="30"></textarea> <p>
+
+  <button onclick="convert()" id="solve">Convert to Grid &gt;&gt;</button><br><br>
+
+  Randomly setting 
+  <input type="text" id="gnum" size="1" value="25" style="width:30px;">
+  digits
+  <button onclick="generate()" id="gen">Generate Puzzle &gt;&gt;</button>
+
+</div>
+
+<div id="mygrid" style="width: 300px; float: left; text-align: center;">
+  <form id="grid">
+        Input Grid<p>
+
+      <table border="0" align="center" cellspacing="0" cellpadding="1">
+      <tr>
+          <td>  </td>
+          <td align="center">1 </td>
+          <td align="center">2 </td>
+          <td align="center">3 </td>
+          <td align="center">4 </td>
+          <td align="center">5 </td>
+          <td align="center">6 </td>
+          <td align="center">7 </td>
+          <td align="center">8 </td>
+          <td align="center">9 </td>
+      </tr>
+
+      <tr>
+        <td>1</td>
+        <td bgcolor="#ffffff"><input type="text" name="c11" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c12" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c13" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c14" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c15" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c16" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c17" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c18" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c19" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>2</td>
+        <td bgcolor="#ffffff"><input type="text" name="c21" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c22" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c23" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c24" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c25" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c26" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c27" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c28" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c29" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>3</td>
+        <td bgcolor="#ffffff"><input type="text" name="c31" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c32" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c33" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c34" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c35" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c36" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c37" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c38" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c39" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>4</td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c41" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c42" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c43" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c44" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c45" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c46" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c47" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c48" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c49" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>5</td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c51" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c52" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c53" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c54" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c55" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c56" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c57" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c58" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c59" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>6</td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c61" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c62" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c63" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c64" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c65" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c66" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c67" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c68" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c69" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>7</td>
+        <td bgcolor="#ffffff"><input type="text" name="c71" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c72" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c73" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c74" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c75" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c76" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c77" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c78" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c79" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>8</td>
+        <td bgcolor="#ffffff"><input type="text" name="c81" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c82" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c83" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c84" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c85" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c86" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c87" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c88" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c89" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr><tr>
+        <td>9</td>
+        <td bgcolor="#ffffff"><input type="text" name="c91" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c92" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c93" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#b0e0ff"><input type="text" name="c94" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c95" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#b0e0ff"><input type="text" name="c96" size="1" style="width:22px; background:#b0e0ff; border:1px solid grey;" onclick="setInputFocus(this.name)"></td>
+
+        <td bgcolor="#ffffff"><input type="text" name="c97" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c98" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+        <td bgcolor="#ffffff"><input type="text" name="c99" size="1" style="width:22px;" onclick="setInputFocus(this.name)"></td>
+
+      </tr></table>
+  </form>
+
+  <button style="width:40px;" onclick="setFocus2Digit('1')">1</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('2')">2</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('3')">3</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('4')">4</button><br>
+
+  <button style="width:40px;" onclick="setFocus2Digit('5')">5</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('6')">6</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('7')">7</button><!--
+  --><button style="width:40px;" onclick="setFocus2Digit('8')">8</button><br>
+
+  <button style="width:40px;" onclick="setFocus2Digit('9')">9</button><!--
+  --><button id="rm" style="width:40px;" onclick="setFocus2Digit('')">x</button><!--
+  --><button style="width:80px;" onclick="solve()" id="solve">Solve</button><br>
+</div>
+
+<div id="output" style="width: 300px; float: left; text-align: center;"></div>
+</div>
+
+<div id="queue" style="width: 900px; float: none;"></div>
+
+</body>
+</html>

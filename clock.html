@@ -1,0 +1,93 @@
+<html>
+<head>
+
+<title>Clock and Timer in Javascript</title>
+
+<script language=javascript>
+
+function formatTime(i){ // format i as xx (%02d)
+  if (i<10) { i="0" + i; }
+  return i;
+}
+
+function formatDate(a_date){
+  var h=a_date.getHours();
+  var m=a_date.getMinutes();
+  var s=a_date.getSeconds();
+  m=formatTime(m);
+  s=formatTime(s);
+  return {'hour': h, 'min': m, 'sec': s};
+}
+
+function formatElapsed(elapsed_ms){
+  var t = elapsed_ms;
+  var s = Math.floor( (t/1000) % 60 );  s=formatTime(s);
+  var m = Math.floor( (t/60000) % 60 ); m=formatTime(m);
+  var h = Math.floor( t/(3600000) );    h=formatTime(h);
+  return {'hour': h, 'min': m, 'sec': s};
+}
+
+</script>
+
+<style type="text/css">
+#clockdiv {font-size: 1500%}
+#run      {font-size: 800%}
+#stop     {font-size: 800%}
+#reset    {font-size: 800%}
+</style>
+
+</head>
+<body bgcolor="#d2e8d7">
+
+<div id="clockdiv" align="center"></div>
+
+<script language=javascript>
+  var clock_div = document.getElementById('clockdiv');
+  var running= 0;
+  var accum_time= 0;
+  var start_time= 0;
+  var int_clock= self.setInterval(function(){clock()},1000);
+  clock();
+
+  function clock(){
+    var cur= new Date();
+    var elapsed_ms= 0;
+    if (running == 1) {
+       elapsed_ms= accum_time + (Date.parse(cur) - start_time);
+    }
+    else {
+       elapsed_ms= accum_time;
+    }
+    var cur_f= formatDate(cur);
+    var elapsed_f= formatElapsed(elapsed_ms);
+    clock_div.innerHTML = cur_f.hour+":"+cur_f.min+":"+cur_f.sec + "<br>" +
+                      elapsed_f.hour+":"+elapsed_f.min+":"+elapsed_f.sec;
+  }
+  function runTimer(){
+     if (running == 0) {
+        running= 1;
+        start_time= Date.parse(new Date());
+     }
+     clock();
+  }
+  function stopTimer(){
+     if (running == 1) {
+        running= 0;
+        accum_time= accum_time+ (Date.parse(new Date()) - start_time);
+        start_time= 0;
+     }
+     clock();
+  }
+  function resetTimer(){
+     stopTimer();
+     running=0; accum_time=0; start_time=0;
+     clock();
+  }
+</script>
+
+<button onclick="runTimer()" id="run">Run</button><br><br>
+<button onclick="stopTimer()" id="stop">Stop</button><br><br>
+<button onclick="resetTimer()" id="reset">Reset</button><br>
+
+</body>
+</html>
